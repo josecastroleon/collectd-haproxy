@@ -10,6 +10,7 @@
 
 import cStringIO as StringIO
 import socket
+import copy
 import csv
 import pprint
 
@@ -288,6 +289,7 @@ def config(config_values):
     interval = None
     testing = False
     custom_dimensions = {}
+    plugin_instance_format = None
 
     for node in config_values.children:
         if node.key == "ProxyMonitor" and node.values[0]:
@@ -308,6 +310,8 @@ def config(config_values):
             else:
                 collectd.warning("WARNING: Check configuration \
                                             setting for %s" % node.key)
+        elif node.key == 'PluginInstanceFormat':
+            plugin_instance_format = node.values[0]
         else:
             collectd.warning('Unknown config key: %s' % node.key)
 
@@ -322,6 +326,7 @@ def config(config_values):
         'excluded_metrics': excluded_metrics,
         'custom_dimensions': custom_dimensions,
         'testing': testing,
+        'plugin_instance_format': plugin_instance_format,
     }
     proxys = "_".join(proxy_monitors)
 
@@ -336,7 +341,15 @@ def config(config_values):
                            **interval_kwarg)
 
 
-def _format_dimensions(dimensions):
+class format_dict(dict):
+    """
+    Helper class that safely ignores missing elements while formatting
+    """
+    def __missing__(self, key):
+        return key.join("{}")
+
+
+def _format_dimensions(dimensions, default=None, fmt=None):
     """
     Formats a dictionary of dimensions to a format that enables them to be
     specified as key, value pairs in plugin_instance to signalfx. E.g.
@@ -345,12 +358,21 @@ def _format_dimensions(dimensions):
     "[a=foo,b=bar]"
     Args:
     dimensions (dict): Mapping of {dimension_name: value, ...}
+    default (str): value returned if dimensions is empty
+    fmt (str): formatting string that will be formatted with the contents
+               of dimensions dict, if specified, E.g. "{plugin_instance}"
     Returns:
-    str: Comma-separated list of dimensions
+    str: if dimensions is empty it will return default parameter,
+         else if the formatting is defined it will return the formatted string
+         otherwhise it will return a Comma-separated list of dimensions
     """
-
-    dim_pairs = ["%s=%s" % (k, v) for k, v in dimensions.iteritems()]
-    return "[%s]" % (",".join(dim_pairs))
+    if len(dimensions) == 0:
+        return default
+    elif fmt:
+        return fmt.format_map(format_dict(dimensions)).lower()
+    else:
+        dim_pairs = ["%s=%s" % (k, v) for k, v in dimensions.items()]
+        return "[%s]" % (",".join(dim_pairs))
 
 
 def _get_proxy_type(type_id):
@@ -420,8 +442,10 @@ def collect_metrics(module_config):
         datapoint.type_instance = translated_metric_name
         datapoint.plugin = PLUGIN_NAME
         dimensions.update(module_config['custom_dimensions'])
-        if len(dimensions) > 0:
-            datapoint.plugin_instance = _format_dimensions(dimensions)
+        datapoint.plugin_instance = _format_dimensions(
+            dimensions,
+            default=datapoint.plugin_instance,
+            fmt=module_config['plugin_instance_format'])
         datapoint.values = (metric_value,)
         pprint_dict = {
                     'plugin': datapoint.plugin,

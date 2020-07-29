@@ -144,3 +144,13 @@ mock_config_enhanced_sample.children = [
 @patch('haproxy.HAProxySocket', MockHAProxySocket)
 def test_enhanced_metrics():
     haproxy.collect_metrics(haproxy.config(mock_config_enhanced_sample))
+	
+mock_config_plugin_type_instance = Mock()
+mock_config_plugin_type_instance.children = [
+    ConfigOption('PluginInstanceFormat', ('{proxy_name}_{service_name}"',)),
+    ConfigOption('Testing', ('True',))
+]
+
+@patch('haproxy.HAProxySocket', MockHAProxySocket)
+def test_plugininstance_testinstance_format():
+    haproxy.collect_metrics(haproxy.config(mock_config_plugin_type_instance))
